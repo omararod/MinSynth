@@ -38,13 +38,14 @@ private:
     struct paTestData
     {
         float sine[TABLE_SIZE];
-        int left_phase;
-        int right_phase;
+        int currentOffset;
+        int frequency;
+        float amplitude;
         char message[20];
-        long count;
     };
 
     PaError err;
     PaStream *stream;
+    paTestData data;
     
 };

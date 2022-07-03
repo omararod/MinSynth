@@ -1,11 +1,11 @@
 #include "AudioDevice.h"
-
+#include <string>
 
 void AudioDevice::Start()
 {
     PaStreamParameters outputParameters;
 
-    paTestData data;
+    
     int i;
 
     printf("PortAudio Test: output sine wave. SR = %d, BufSize = %d\n", SAMPLE_RATE, FRAMES_PER_BUFFER);
@@ -15,8 +15,10 @@ void AudioDevice::Start()
     {
         data.sine[i] = (float)sin(((double)i / (double)TABLE_SIZE) * M_PI * 2.);
     }
-    data.left_phase = data.right_phase = 0;
-    data.count = 40;
+    data.currentOffset = data.currentOffset = 0;
+    data.frequency = 442;
+    data.amplitude = 1.0;
+    
 
     err = Pa_Initialize();
     if (err != paNoError) PrintError();
@@ -49,18 +51,14 @@ void AudioDevice::Start()
     err = Pa_StartStream(stream);
     if (err != paNoError) PrintError();
 
-    printf("Play for %d seconds.\n", NUM_SECONDS);
-    //Pa_Sleep( NUM_SECONDS * 1000 );
-    for (int i = 0; i< NUM_SECONDS * 100; i++)
-    {
-
-        Pa_Sleep(10);
-        data.count++;
-    }
+    
+    
 }
 void AudioDevice::SetWaveParameters(float frequency, float amplitude)
 {
-    
+    //current implementation supports only integer frequencies
+    data.frequency = static_cast<int>(frequency);
+    data.amplitude = amplitude;
 }
 void AudioDevice::Stop()
 {
@@ -75,10 +73,10 @@ void AudioDevice::Stop()
 }
 
 
-int AudioDevice::patestCallback(const void *inputBuffer, void *outputBuffer,
+int AudioDevice::patestCallback(const void */*inputBuffer*/, void* outputBuffer,
     unsigned long framesPerBuffer,
-    const PaStreamCallbackTimeInfo* timeInfo,
-    PaStreamCallbackFlags statusFlags,
+    const PaStreamCallbackTimeInfo* /*timeInfo*/,
+    PaStreamCallbackFlags /*statusFlags*/,
     void *userData)
 {
     paTestData *data = (paTestData*)userData;
@@ -86,18 +84,14 @@ int AudioDevice::patestCallback(const void *inputBuffer, void *outputBuffer,
     float *out = (float*)outputBuffer;
     unsigned long i;
 
-    (void)timeInfo; /* Prevent unused variable warnings. */
-    (void)statusFlags;
-    (void)inputBuffer;
-
     for (i = 0; i<framesPerBuffer; i++)
     {
-        *out++ = data->sine[data->left_phase];  /* left */
-        *out++ = data->sine[data->right_phase];  /* right */
-        data->left_phase += data->count;
-        if (data->left_phase >= TABLE_SIZE) data->left_phase -= TABLE_SIZE;
-        data->right_phase += data->count;
-        if (data->right_phase >= TABLE_SIZE) data->right_phase -= TABLE_SIZE;
+        float sampleValue = data->sine[data->currentOffset] * data->amplitude;
+        *out++ = sampleValue;  /* left */
+        *out++ = sampleValue;  /* right */
+        data->currentOffset += data->frequency;
+        if (data->currentOffset >= TABLE_SIZE) data->currentOffset -= TABLE_SIZE;
+        
     }
     return paContinue;
 }
@@ -113,5 +107,5 @@ void AudioDevice::PrintError()
     Pa_Terminate();
     fprintf(stderr, "An error occurred while using the portaudio stream\n");
     fprintf(stderr, "Error number: %d\n", err);
-    fprintf(stderr, "Error message: %s\n", Pa_GetErrorText(err));
+    fprintf(stderr, "Error message: %s\n", std::string(Pa_GetErrorText(err)));
 }
