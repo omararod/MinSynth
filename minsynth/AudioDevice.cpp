@@ -1,60 +1,108 @@
 #include "AudioDevice.h"
 #include <string>
+#include <exception>
+#include <cmath>
+#include "portaudio.h"
 
-void AudioDevice::Start()
+const float pi = 3.14159265358979323846;
+const int FRAMES_PER_BUFFER = 64;
+const int SAMPLE_RATE = 44100;
+const int TABLE_SIZE = SAMPLE_RATE;
+
+PaError err;
+PaStream *stream;
+
+void PrintError()
 {
-    PaStreamParameters outputParameters;
+    Pa_Terminate();
+    fprintf(stderr, "An error occurred while using the portaudio stream\n");
+    fprintf(stderr, "Error number: %d\n", err);
+    fprintf(stderr, "Error message: %s\n", std::string(Pa_GetErrorText(err)));
+}
 
-    
+int patestCallback(const void *inputBuffer, void *outputBuffer,
+    unsigned long framesPerBuffer,
+    const PaStreamCallbackTimeInfo* timeInfo,
+    PaStreamCallbackFlags statusFlags,
+    void *userData)
+{
+    AudioDevice::AudioData *data = (AudioDevice::AudioData*)userData;
+
+    float *out = (float*)outputBuffer;
+    unsigned long i;
+
+    for (i = 0; i<framesPerBuffer; i++)
+    {
+        float sampleValue = data->sineLUT[data->currentOffset] * data->amplitude;
+        *out++ = sampleValue;  /* left */
+        *out++ = sampleValue;  /* right */
+        data->currentOffset = (data->currentOffset + data->frequency) % TABLE_SIZE;
+    }
+    return paContinue;
+}
+void StreamFinished(void* userData)
+{
+    AudioDevice::AudioData *data = static_cast<AudioDevice::AudioData *>(userData);
+}
+
+AudioDevice::AudioDevice()
+{
     int i;
-
-    printf("PortAudio Test: output sine wave. SR = %d, BufSize = %d\n", SAMPLE_RATE, FRAMES_PER_BUFFER);
-
-    /* initialise sinusoidal wavetable */
+    //initialize sine look-up table
+    float stepSize = (2.0*pi) / static_cast<float>(TABLE_SIZE);
+    data.sineLUT.resize(TABLE_SIZE);
     for (i = 0; i<TABLE_SIZE; i++)
     {
-        data.sine[i] = (float)sin(((double)i / (double)TABLE_SIZE) * M_PI * 2.);
+        data.sineLUT[i] = (float)sin(i *stepSize);
     }
     data.currentOffset = data.currentOffset = 0;
     data.frequency = 442;
     data.amplitude = 1.0;
-    
+}
+void AudioDevice::Start(unsigned int frequency,float amplitude)
+{
+    data.frequency = frequency;
+    data.amplitude = amplitude;
+    PaStreamParameters outputParameters;
+    try {
 
-    err = Pa_Initialize();
-    if (err != paNoError) PrintError();
+        err = Pa_Initialize();
+        if (err != paNoError) throw std::runtime_error("Error initializing audio device");
 
-    outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
-    if (outputParameters.device == paNoDevice) {
-        fprintf(stderr, "Error: No default output device.\n");
-        PrintError();
+        outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
+        if (outputParameters.device == paNoDevice) {
+           throw std::runtime_error("Error initializing audio device");
+        }
+        outputParameters.channelCount = 2;       /* stereo output */
+        outputParameters.sampleFormat = paFloat32; /* 32 bit floating point output */
+        outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
+        outputParameters.hostApiSpecificStreamInfo = NULL;
+
+        err = Pa_OpenStream(
+            &stream,
+            NULL, /* no input */
+            &outputParameters,
+            SAMPLE_RATE,
+            FRAMES_PER_BUFFER,
+            paClipOff,      /* we won't output out of range samples so don't bother clipping them */
+            patestCallback,
+            &data);
+        if (err != paNoError) throw std::runtime_error("Error opening audio device");
+
+        err = Pa_SetStreamFinishedCallback(stream, &StreamFinished);
+        if (err != paNoError) throw std::runtime_error("Error registering callback on audio device");
+
+        err = Pa_StartStream(stream);
+        if (err != paNoError) throw std::runtime_error("Error starting audio stream");
     }
-    outputParameters.channelCount = 2;       /* stereo output */
-    outputParameters.sampleFormat = paFloat32; /* 32 bit floating point output */
-    outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
-    outputParameters.hostApiSpecificStreamInfo = NULL;
-
-    err = Pa_OpenStream(
-        &stream,
-        NULL, /* no input */
-        &outputParameters,
-        SAMPLE_RATE,
-        FRAMES_PER_BUFFER,
-        paClipOff,      /* we won't output out of range samples so don't bother clipping them */
-        patestCallback,
-        &data);
-    if (err != paNoError) PrintError();
-
-    sprintf(data.message, "No Message");
-    err = Pa_SetStreamFinishedCallback(stream, &StreamFinished);
-    if (err != paNoError) PrintError();
-
-    err = Pa_StartStream(stream);
-    if (err != paNoError) PrintError();
-
-    
+    catch (std::runtime_error)
+    {
+        PrintError();
+        throw;
+    }
     
 }
-void AudioDevice::SetWaveParameters(float frequency, float amplitude)
+void AudioDevice::SetWaveParameters(unsigned int frequency, float amplitude)
 {
     //current implementation supports only integer frequencies
     data.frequency = static_cast<int>(frequency);
@@ -70,42 +118,4 @@ void AudioDevice::Stop()
 
     Pa_Terminate();
     printf("Test finished.\n");
-}
-
-
-int AudioDevice::patestCallback(const void */*inputBuffer*/, void* outputBuffer,
-    unsigned long framesPerBuffer,
-    const PaStreamCallbackTimeInfo* /*timeInfo*/,
-    PaStreamCallbackFlags /*statusFlags*/,
-    void *userData)
-{
-    paTestData *data = (paTestData*)userData;
-
-    float *out = (float*)outputBuffer;
-    unsigned long i;
-
-    for (i = 0; i<framesPerBuffer; i++)
-    {
-        float sampleValue = data->sine[data->currentOffset] * data->amplitude;
-        *out++ = sampleValue;  /* left */
-        *out++ = sampleValue;  /* right */
-        data->currentOffset += data->frequency;
-        if (data->currentOffset >= TABLE_SIZE) data->currentOffset -= TABLE_SIZE;
-        
-    }
-    return paContinue;
-}
-
-void AudioDevice::StreamFinished(void* userData)
-{
-    paTestData *data = (paTestData *)userData;
-    printf("Stream Completed: %s\n", data->message);
-}
-
-void AudioDevice::PrintError()
-{
-    Pa_Terminate();
-    fprintf(stderr, "An error occurred while using the portaudio stream\n");
-    fprintf(stderr, "Error number: %d\n", err);
-    fprintf(stderr, "Error message: %s\n", std::string(Pa_GetErrorText(err)));
 }
