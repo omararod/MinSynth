@@ -1,6 +1,7 @@
 #include "AudioDevice.h"
 #include <string>
 #include <exception>
+#include <stdexcept>
 #include <cmath>
 #include "portaudio.h"
 

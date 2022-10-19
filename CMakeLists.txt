@@ -1,4 +1,5 @@
 project(MinSynth)
+set(CMAKE_CXX_STANDARD 17)
 cmake_minimum_required(VERSION 3.16)
 add_subdirectory(portaudio)
 add_subdirectory(examples)
