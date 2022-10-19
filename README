@@ -1,0 +1,2 @@
+On raspberry pi it requires ALSA to be installed:
+sudo apt-get install libasound2-dev
